@@ -50,12 +50,34 @@ export async function addBoard(req, res) {
 export async function updateBoard(req, res) {
     const { loggedinUser, body: board } = req
     const { _id: userId, isAdmin } = loggedinUser
+    const boardId = board._id || req.params.id
 
-    if (!isAdmin && !board.members.some(member => member._id === userId)) {
-        res.status(403).send('Not your board...')
-        return
-    }
     try {
+        // Fetch the board from database to verify user has access (more secure)
+        const existingBoard = await boardService.getById(boardId)
+        if (!existingBoard) {
+            res.status(404).send('Board not found')
+            return
+        }
+
+        // Check authorization: user must be admin, owner, or a member
+        const userIdStr = userId.toString()
+        const isOwner = existingBoard.owner?._id?.toString() === userIdStr
+        const isMember = existingBoard.members?.some(member => {
+            const memberId = member._id?.toString ? member._id.toString() : String(member._id)
+            return memberId === userIdStr
+        })
+
+        if (!isAdmin && !isOwner && !isMember) {
+            res.status(403).send('Not your board...')
+            return
+        }
+
+        // Ensure members array is preserved from existing board if not provided
+        if (!board.members || board.members.length === 0) {
+            board.members = existingBoard.members || []
+        }
+
         if (board.groups) {
             board.groups = board.groups.map(group => ({
                 ...group,
